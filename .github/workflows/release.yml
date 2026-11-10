@@ -30,6 +30,19 @@ jobs:
       - name: Bauen
         run: cargo build --release --locked
 
+      # Sicherstellen, dass die .exe ohne Konsolenfenster startet und
+      # keine "Visual C++ Redistributable" braucht.
+      - name: Prüfen
+        shell: pwsh
+        run: |
+          $bytes = [IO.File]::ReadAllBytes("target/release/stacky-notes.exe")
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $pe + 0x5C)
+          if ($subsystem -ne 2) { throw "Falsches Subsystem: $subsystem (erwartet 2 = Fenster-App)" }
+          $text = [Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -match '(?i)vcruntime140\.dll') { throw "Die .exe braucht VCRUNTIME140.dll" }
+          Write-Host "OK: Fenster-App ohne Konsole, keine VC++-Laufzeit nötig"
+
       - name: Verpacken
         shell: pwsh
         run: |
