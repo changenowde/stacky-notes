@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Stacky Notes
+Comment=Schnell Notes für Substack posten
+Exec=stacky-notes
+Icon=stacky-notes
+Terminal=false
+Categories=Network;Utility;
+StartupWMClass=stacky-notes

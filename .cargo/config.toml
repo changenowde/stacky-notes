@@ -1,0 +1,4 @@
+# Windows: C-Laufzeitbibliothek fest einbauen, damit die .exe auch auf
+# frischen Systemen ohne "Visual C++ Redistributable" startet.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

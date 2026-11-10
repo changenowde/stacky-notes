@@ -1,0 +1,165 @@
+# Baut Stacky Notes für Windows, macOS und Linux.
+#
+# - Bei jedem Tag "v*" (z. B. v0.1.0) entsteht automatisch ein GitHub-Release
+#   mit allen drei Downloads.
+# - Über "Run workflow" (Actions-Tab) lässt sich ein Testbuild ohne Release
+#   starten; die Dateien liegen dann als Artefakte im Workflow-Lauf.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # -------------------------------------------------------------------------
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bauen
+        run: cargo build --release --locked
+
+      - name: Verpacken
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/stacky-notes.exe dist/StackyNotes-windows-x64.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: dist/StackyNotes-windows-x64.exe
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  macos:
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      APP: dist/Stacky Notes.app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bauen (Apple Silicon und Intel)
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: App-Paket zusammenbauen (Universal)
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          lipo -create -output "$APP/Contents/MacOS/StackyNotes" \
+            target/aarch64-apple-darwin/release/stacky-notes \
+            target/x86_64-apple-darwin/release/stacky-notes
+          cp assets/icon.icns "$APP/Contents/Resources/AppIcon.icns"
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          plutil -lint "$APP/Contents/Info.plist"
+          lipo -info "$APP/Contents/MacOS/StackyNotes"
+
+      # Ohne Apple-Konto: Ad-hoc-Signatur für das GANZE App-Paket.
+      # Fehlt sie, meldet macOS "App ist beschädigt" ohne "Dennoch öffnen".
+      - name: Ad-hoc signieren
+        run: |
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: DMG erstellen
+        run: |
+          mkdir -p dmg
+          cp -R "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          # hdiutil ist auf CI-Maschinen gelegentlich "busy" -> bis zu 3 Versuche
+          for i in 1 2 3; do
+            hdiutil create -volname "Stacky Notes" -srcfolder dmg -ov -format UDZO \
+              dist/StackyNotes-macos-universal.dmg && break
+            sleep 5
+          done
+          test -f dist/StackyNotes-macos-universal.dmg
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: dist/StackyNotes-macos-universal.dmg
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Zig und cargo-zigbuild installieren
+        run: pip install ziglang cargo-zigbuild
+
+      # Gegen glibc 2.28 bauen: läuft dann auch auf älteren Distributionen
+      # (Debian 10+, Ubuntu 18.04+, Fedora 29+, RHEL 8+ ...).
+      - name: Bauen
+        run: cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu.2.28
+
+      - name: Verpacken
+        run: |
+          PKG=dist/StackyNotes
+          mkdir -p "$PKG"
+          cp target/x86_64-unknown-linux-gnu/release/stacky-notes "$PKG/"
+          cp assets/icon-256.png "$PKG/stacky-notes.png"
+          cp packaging/linux/stacky-notes.desktop packaging/linux/install.sh "$PKG/"
+          chmod +x "$PKG/stacky-notes" "$PKG/install.sh"
+          tar -C dist -czf dist/StackyNotes-linux-x64.tar.gz StackyNotes
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: dist/StackyNotes-linux-x64.tar.gz
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------------
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            > Stacky Notes ist ein unabhängiges Projekt und **kein offizielles Produkt von Substack Inc.**
+
+            ## Download & Installation
+
+            **Windows** – `StackyNotes-windows-x64.exe` herunterladen und doppelklicken.
+            Erscheint „Der Computer wurde durch Windows geschützt“: *Weitere Informationen* → *Trotzdem ausführen*.
+
+            **macOS** (Apple Silicon & Intel, ab macOS 11) – `StackyNotes-macos-universal.dmg` öffnen und die App in „Programme“ ziehen.
+            Beim ersten Start blockiert macOS die App, weil sie nicht über ein Apple-Entwicklerkonto signiert ist. Dann:
+            *Systemeinstellungen* → *Datenschutz & Sicherheit* → ganz nach unten scrollen → *Dennoch öffnen*. Das ist nur einmal nötig.
+
+            **Linux** (x64) – `StackyNotes-linux-x64.tar.gz` entpacken und `./install.sh` ausführen
+            (legt einen Eintrag im Anwendungsmenü an). Alternativ `./stacky-notes` direkt starten.
