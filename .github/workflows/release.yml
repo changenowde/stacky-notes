@@ -1,9 +1,11 @@
 # Baut Stacky Notes für Windows, macOS und Linux.
 #
-# - Bei jedem Tag "v*" (z. B. v0.1.0) entsteht automatisch ein GitHub-Release
-#   mit allen drei Downloads.
-# - Über "Run workflow" (Actions-Tab) lässt sich ein Testbuild ohne Release
-#   starten; die Dateien liegen dann als Artefakte im Workflow-Lauf.
+# Release veröffentlichen, ganz ohne Git auf dem eigenen Rechner:
+#   Actions -> Release -> Run workflow -> Version eingeben (z. B. 0.2.0)
+#   Vorher die Version in Cargo.toml anpassen (geht auch im Browser).
+# Version leer lassen = nur Testbuild; die Dateien liegen dann als
+# Artefakte im Workflow-Lauf.
+# Alternativ entsteht auch bei jedem gepushten Tag "v*" ein Release.
 
 name: Release
 
@@ -11,6 +13,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version veröffentlichen, z. B. 0.2.0 (leer lassen = nur Testbuild)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -148,10 +155,23 @@ jobs:
 
   # -------------------------------------------------------------------------
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
     needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
+      - name: Tag bestimmen
+        id: tag
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v${INPUT_VERSION#v}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release: $TAG"
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -159,6 +179,9 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Stacky Notes ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true

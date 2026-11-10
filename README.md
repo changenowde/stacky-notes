@@ -66,16 +66,16 @@ Unter Linux müssen die üblichen Desktop-Bibliotheken vorhanden sein (X11 oder 
 
 ### Neues Release veröffentlichen
 
-1. Version in `Cargo.toml` erhöhen (z. B. `version = "0.2.0"`) und committen.
-2. Tag setzen und pushen:
-   ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
-3. GitHub Actions baut daraufhin alle drei Versionen und legt ein Release mit Installationshinweisen an. Das dauert etwa 10–15 Minuten.
+Das geht komplett im Browser:
 
-Einen Testbuild ohne Release startest du im Reiter *Actions* → *Release* → *Run workflow*.
-Die Dateien liegen dann unten im Workflow-Lauf unter *Artifacts*.
+1. In `Cargo.toml` die Version erhöhen, z. B. `version = "0.2.0"`. Auf GitHub die Datei öffnen, auf den Stift klicken, ändern und mit *Commit changes* speichern.
+2. Reiter **Actions** → links **Release** → rechts **Run workflow**.
+3. Bei *Version* dieselbe Nummer eintragen (z. B. `0.2.0`) und **Run workflow** klicken.
+4. Nach etwa 10–15 Minuten ist unter **Releases** die neue Version mit allen drei Downloads da.
+
+Lässt du das Versionsfeld leer, entsteht nur ein Testbuild ohne Release. Die Dateien findest du dann unten im Workflow-Lauf unter *Artifacts*.
+
+Wer lieber mit Git arbeitet: Ein gepushter Tag wie `v0.2.0` löst ebenfalls ein Release aus.
 
 Da die Dateinamen immer gleich bleiben, kannst du feste Links zur jeweils neuesten Version setzen:
 
